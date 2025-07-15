@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
-const FALLBACK_IMAGE = '/fallback.gif'; // Make sure it's in public/
+const FALLBACK_IMAGE = '/fallback.gif';
 const BASE_API_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function VideoCard({ video, refProp }) {

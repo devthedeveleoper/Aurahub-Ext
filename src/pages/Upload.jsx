@@ -1,84 +1,144 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 
 const BASE_API_URL = import.meta.env.VITE_API_BASE_URL;
 
-export default function Upload() {
-  const [file, setFile] = useState(null);
-  const [uploadURL, setUploadURL] = useState('');
-  const [status, setStatus] = useState('');
-  const [loading, setLoading] = useState(false);
+export default function UploadPage() {
+  const [uploadUrl, setUploadUrl] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadSpeed, setUploadSpeed] = useState('');
+  const [remainingTime, setRemainingTime] = useState('');
+  const [uploadedUrl, setUploadedUrl] = useState('');
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef(null);
 
-  const handleFileChange = (e) => {
-    setFile(e.target.files[0]);
-    setStatus('');
-  };
-
-  const handleUpload = async () => {
+  const handleFileUpload = async (file) => {
     if (!file) return;
-
-    setLoading(true);
-    setStatus('Fetching upload URL...');
 
     try {
       const res = await fetch(`${BASE_API_URL}/api/upload-url`);
       const data = await res.json();
+      const url = data.result.url;
 
-      if (!data.result?.url) {
-        setStatus('Failed to get upload URL.');
-        setLoading(false);
-        return;
-      }
-
-      const uploadUrl = data.result.url;
-      setUploadURL(uploadUrl);
-      setStatus('Uploading file...');
-
+      setUploadUrl(url);
       const formData = new FormData();
       formData.append('file1', file);
 
-      const uploadRes = await fetch(uploadUrl, {
-        method: 'POST',
-        body: formData,
-      });
+      let lastLoaded = 0;
+      let lastTime = Date.now();
 
-      if (uploadRes.ok) {
-        setStatus('✅ Upload successful!');
-      } else {
-        setStatus('❌ Upload failed.');
-      }
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url, true);
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const percent = (e.loaded / e.total) * 100;
+          setUploadProgress(Math.round(percent));
+
+          const now = Date.now();
+          const timeElapsed = (now - lastTime) / 1000; // seconds
+          const bytesUploaded = e.loaded - lastLoaded;
+
+          if (timeElapsed > 0) {
+            const speed = bytesUploaded / timeElapsed; // bytes/sec
+            setUploadSpeed((speed / 1024).toFixed(2) + ' KB/s');
+
+            const remainingBytes = e.total - e.loaded;
+            const timeRemaining = remainingBytes / speed;
+            setRemainingTime(formatTime(timeRemaining));
+          }
+
+          lastLoaded = e.loaded;
+          lastTime = now;
+        }
+      };
+
+      xhr.onload = () => {
+        const response = JSON.parse(xhr.responseText);
+        setUploadedUrl(response.result?.url || '');
+      };
+
+      xhr.onerror = () => {
+        alert('Upload failed');
+      };
+
+      xhr.send(formData);
     } catch (err) {
-      setStatus('❌ Error during upload.');
       console.error(err);
-    } finally {
-      setLoading(false);
+      alert('Failed to get upload URL');
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center px-4">
-      <h1 className="text-3xl font-bold mb-6">Upload Video</h1>
+  const formatTime = (seconds) => {
+    const min = Math.floor(seconds / 60);
+    const sec = Math.floor(seconds % 60);
+    return `${min}m ${sec}s`;
+  };
 
-      <div className="bg-gray-800 p-6 rounded shadow-md w-full max-w-md">
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragActive(false);
+    const file = e.dataTransfer.files[0];
+    handleFileUpload(file);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setDragActive(true);
+  };
+
+  const handleDragLeave = () => setDragActive(false);
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    handleFileUpload(file);
+  };
+
+  return (
+    <div
+      className="max-w-xl mx-auto mt-10 p-6 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 shadow-lg"
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+    >
+      <h1 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Upload Video</h1>
+
+      <div
+        className={`border-2 border-dashed rounded-lg p-6 text-center ${
+          dragActive ? 'border-blue-500 bg-blue-50 dark:bg-gray-800' : 'border-gray-300'
+        }`}
+        onClick={() => fileInputRef.current.click()}
+      >
+        <p className="text-gray-700 dark:text-gray-300">Drag & drop a file here or click to upload</p>
         <input
           type="file"
+          className="hidden"
+          ref={fileInputRef}
           onChange={handleFileChange}
-          className="w-full mb-4 bg-gray-700 text-white p-2 rounded"
         />
-
-        <button
-          onClick={handleUpload}
-          disabled={!file || loading}
-          className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 px-4 py-2 rounded w-full transition"
-        >
-          {loading ? 'Uploading...' : 'Upload'}
-        </button>
-
-        {status && (
-          <div className="mt-4 text-sm text-gray-300">
-            <strong>Status:</strong> {status}
-          </div>
-        )}
       </div>
+
+      {uploadProgress > 0 && (
+        <div className="mt-4">
+          <div className="h-4 bg-gray-300 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-blue-500"
+              style={{ width: `${uploadProgress}%` }}
+            />
+          </div>
+          <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">
+            Progress: {uploadProgress}% — Speed: {uploadSpeed} — Time left: {remainingTime}
+          </div>
+        </div>
+      )}
+
+      {uploadedUrl && (
+        <div className="mt-4 text-green-600 dark:text-green-400">
+          <p className="font-semibold">Upload successful!</p>
+          <a href={uploadedUrl} target="_blank" rel="noreferrer" className="underline break-all">
+            {uploadedUrl}
+          </a>
+        </div>
+      )}
     </div>
   );
 }

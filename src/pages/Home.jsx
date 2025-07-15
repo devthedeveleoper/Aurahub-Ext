@@ -20,29 +20,28 @@ export default function Home() {
 
   const loader = useRef(null);
 
-  // Sort logic
+  const shuffle = (array) => {
+    return array
+      .map((value) => ({ value, sort: Math.random() }))
+      .sort((a, b) => a.sort - b.sort)
+      .map(({ value }) => value);
+  };
+
   const sortVideos = useCallback(
     (videos) => {
       const sorted = [...videos];
-      if (sort === 'name') {
-        sorted.sort((a, b) => a.name.localeCompare(b.name));
-      } else if (sort === '-name') {
-        sorted.sort((a, b) => b.name.localeCompare(a.name));
-      } else if (sort === 'date') {
-        sorted.sort((a, b) => new Date(b.created) - new Date(a.created));
-      } else if (sort === '-date') {
-        sorted.sort((a, b) => new Date(a.created) - new Date(b.created));
-      } else if (sort === 'size') {
-        sorted.sort((a, b) => a.size - b.size);
-      } else if (sort === '-size') {
-        sorted.sort((a, b) => b.size - a.size);
-      }
+      if (sort === 'name') sorted.sort((a, b) => a.name.localeCompare(b.name));
+      else if (sort === '-name') sorted.sort((a, b) => b.name.localeCompare(a.name));
+      else if (sort === 'date') sorted.sort((a, b) => new Date(b.created) - new Date(a.created));
+      else if (sort === '-date') sorted.sort((a, b) => new Date(a.created) - new Date(b.created));
+      else if (sort === 'size') sorted.sort((a, b) => a.size - b.size);
+      else if (sort === '-size') sorted.sort((a, b) => b.size - a.size);
       return sorted;
     },
     [sort]
   );
 
-  // Initial fetch with caching
+  // Fetch or use cached data
   useEffect(() => {
     const cached = localStorage.getItem('video_cache');
     const lastUpdated = localStorage.getItem('video_cache_time');
@@ -52,7 +51,7 @@ export default function Home() {
       fetch(`${BASE_API_URL}/api/files`)
         .then((res) => res.json())
         .then((data) => {
-          const files = data.result?.files || [];
+          const files = shuffle(data.result?.files || []);
           localStorage.setItem('video_cache', JSON.stringify(files));
           localStorage.setItem('video_cache_time', Date.now().toString());
           setAllVideos(files);
@@ -60,13 +59,12 @@ export default function Home() {
         .catch(() => console.error('Failed to load videos'))
         .finally(() => setLoading(false));
     } else {
-      const files = JSON.parse(cached);
-      setAllVideos(files);
+      setAllVideos(shuffle(JSON.parse(cached)));
       setLoading(false);
     }
   }, []);
 
-  // Apply search and sort whenever data or filter changes
+  // Search and sort
   useEffect(() => {
     const filtered = allVideos.filter((v) =>
       v.name.toLowerCase().includes(search.toLowerCase())
@@ -93,8 +91,9 @@ export default function Home() {
     const observer = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting && !loading) loadMore();
     });
-    observer.observe(loader.current);
-    return () => observer.disconnect();
+    const current = loader.current;
+    observer.observe(current);
+    return () => observer.unobserve(current);
   }, [loader, loadMore, loading]);
 
   if (!ageConfirmed) {
@@ -102,7 +101,7 @@ export default function Home() {
   }
 
   return (
-    <div className="p-4">
+    <div className="p-4 max-w-7xl mx-auto text-gray-900 dark:text-gray-100">
       <SearchSortBar search={search} setSearch={setSearch} sort={sort} setSort={setSort} />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {displayedVideos.map((video, index) => (

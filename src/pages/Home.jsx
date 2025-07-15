@@ -18,14 +18,7 @@ export default function Home() {
     localStorage.getItem('is18plus') === 'true'
   );
 
-  const loader = useRef(null);
-
-  const shuffle = (array) => {
-    return array
-      .map((value) => ({ value, sort: Math.random() }))
-      .sort((a, b) => a.sort - b.sort)
-      .map(({ value }) => value);
-  };
+  const loaderRef = useRef(null);
 
   const sortVideos = useCallback(
     (videos) => {
@@ -41,7 +34,7 @@ export default function Home() {
     [sort]
   );
 
-  // Fetch or use cached data
+  // Initial fetch
   useEffect(() => {
     const cached = localStorage.getItem('video_cache');
     const lastUpdated = localStorage.getItem('video_cache_time');
@@ -51,7 +44,7 @@ export default function Home() {
       fetch(`${BASE_API_URL}/api/files`)
         .then((res) => res.json())
         .then((data) => {
-          const files = shuffle(data.result?.files || []);
+          const files = data.result?.files || [];
           localStorage.setItem('video_cache', JSON.stringify(files));
           localStorage.setItem('video_cache_time', Date.now().toString());
           setAllVideos(files);
@@ -59,12 +52,13 @@ export default function Home() {
         .catch(() => console.error('Failed to load videos'))
         .finally(() => setLoading(false));
     } else {
-      setAllVideos(shuffle(JSON.parse(cached)));
+      const files = JSON.parse(cached);
+      setAllVideos(files);
       setLoading(false);
     }
   }, []);
 
-  // Search and sort
+  // Filter, sort, reset pagination
   useEffect(() => {
     const filtered = allVideos.filter((v) =>
       v.name.toLowerCase().includes(search.toLowerCase())
@@ -74,6 +68,7 @@ export default function Home() {
     setPage(1);
   }, [search, sort, allVideos, sortVideos]);
 
+  // Load more items
   const loadMore = useCallback(() => {
     const nextPage = page + 1;
     const filtered = allVideos.filter((v) =>
@@ -85,35 +80,53 @@ export default function Home() {
     setPage(nextPage);
   }, [page, allVideos, search, sortVideos]);
 
-  // Infinite Scroll
+  // Infinite scroll observer
   useEffect(() => {
-    if (!loader.current) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && !loading) loadMore();
-    });
-    const current = loader.current;
-    observer.observe(current);
-    return () => observer.unobserve(current);
-  }, [loader, loadMore, loading]);
+    if (!loaderRef.current) return;
 
-  if (!ageConfirmed) {
-    return <AgeGate onConfirm={() => setAgeConfirmed(true)} />;
-  }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (entry.isIntersecting && !loading) {
+          loadMore();
+        }
+      },
+      {
+        rootMargin: '200px',
+      }
+    );
+
+    observer.observe(loaderRef.current);
+
+    return () => {
+      if (loaderRef.current) observer.unobserve(loaderRef.current);
+    };
+  }, [loadMore, loading]);
+
+  if (!ageConfirmed) return <AgeGate onConfirm={() => setAgeConfirmed(true)} />;
 
   return (
-    <div className="p-4 max-w-7xl mx-auto text-gray-900 dark:text-gray-100">
+    <div className="p-4">
       <SearchSortBar search={search} setSearch={setSearch} sort={sort} setSort={setSort} />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {displayedVideos.map((video, index) => (
           <VideoCard
             key={video.linkid}
             video={video}
-            refProp={index === displayedVideos.length - 1 ? loader : null}
           />
         ))}
-        {loading &&
-          Array.from({ length: PAGE_SIZE }).map((_, i) => <SkeletonCard key={i} />)}
       </div>
+
+      {loading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+          {Array.from({ length: PAGE_SIZE }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      )}
+
+      {/* Ref loader for infinite scroll */}
+      <div ref={loaderRef} className="h-10 mt-4" />
     </div>
   );
 }
